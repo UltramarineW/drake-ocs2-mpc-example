@@ -10,22 +10,23 @@
 #include "drake/systems/analysis/simulator.h"
 #include "drake/systems/primitives/vector_log_sink.h"
 #include "drake/systems/framework/leaf_system.h"
-#include "drake/multibody/plant/multibody_plant.h"
-#include "drake/multibody/parsing/parser.h"
-#include "drake/geometry/scene_graph.h"
-#include "drake/geometry/meshcat_visualizer.h"
-#include "drake/geometry/meshcat_visualizer_params.h"
-#include "drake/geometry/meshcat.h"
-#include "drake/geometry/drake_visualizer.h"
-#include "drake/multibody/tree/revolute_joint.h"
-#include "drake/lcm/drake_lcm.h"
 #include <drake/systems/lcm/lcm_interface_system.h>
 #include "drake/systems/lcm/lcm_publisher_system.h"
 #include "drake/systems/lcm/lcm_subscriber_system.h"
 #include "drake/systems/controllers/linear_quadratic_regulator.h"
 #include "drake/systems/primitives/vector_log_sink.h"
-#include "drake/common/eigen_types.h"
 #include "drake/systems/framework/basic_vector.h"
+#include "drake/multibody/plant/multibody_plant.h"
+#include "drake/multibody/parsing/parser.h"
+#include "drake/multibody/tree/revolute_joint.h"
+#include "drake/geometry/scene_graph.h"
+#include "drake/geometry/meshcat_visualizer.h"
+#include "drake/geometry/meshcat_visualizer_params.h"
+#include "drake/geometry/meshcat.h"
+#include "drake/geometry/drake_visualizer.h"
+#include "drake/lcm/drake_lcm.h"
+#include "drake/common/eigen_types.h"
+#include "drake/common/schema/transform.h"
 // boost
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
@@ -60,8 +61,9 @@ class My_MPC_Controller final : public drake::systems::LeafSystem<double> {
     void CalcU(const drake::systems::Context<double>& context, drake::systems::BasicVector<double> *output) const;
 
     private:
-
+    // member helper function
     ocs2::TargetTrajectories reconstructTargetTrajectory(const double time, Eigen::VectorXd desire_state) const;
+    void PrintDebugInfo (const ocs2::PrimalSolution primalSolution) const;
 
     std::unique_ptr<drake::systems::Context<double>> plant_context_;
     std::unique_ptr<drake::systems::Context<double>> contextPtr_;
@@ -147,6 +149,7 @@ My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> &p
     //mpc timer
     mpcTimerPtr_ = std::make_shared<ocs2::benchmark::RepeatedTimer>();
     mpcTimerPtr_->reset();
+
 }
 
 ocs2::TargetTrajectories My_MPC_Controller::reconstructTargetTrajectory(const double time, Eigen::VectorXd desire_state) const{
@@ -163,18 +166,37 @@ ocs2::TargetTrajectories My_MPC_Controller::reconstructTargetTrajectory(const do
     return {desiredTimeTrajectory, desiredStateTrajectory, desireInputTrajectory};
 }
 
+void My_MPC_Controller::PrintDebugInfo (const ocs2::PrimalSolution primalSolution) const{
+    const std::size_t N = primalSolution.timeTrajectory_.size();
+
+
+    std::cout << "mpc solution" << std::endl;
+    for (std::size_t k = 0; k < N; k++) {
+        std::cout << "time: " << primalSolution.timeTrajectory_[k] << "  state: ";
+        for (std::size_t j = 0; j < primalSolution.stateTrajectory_[k].rows(); j++) {
+            std::cout << primalSolution.stateTrajectory_[k](j) << " ";
+        }
+        std::cout << "input: ";
+        for (std::size_t j = 0; j < primalSolution.inputTrajectory_[k].rows(); j++) {
+            std::cout <<  primalSolution.inputTrajectory_[k](j) << " ";
+        }
+        std::cout << "\n" << std::endl;
+    }
+    std::cout << "\n\n" << std::endl;
+}
+
 void My_MPC_Controller::CalcU(const drake::systems::Context<double>& context, drake::systems::BasicVector<double> *output) const {
     Eigen::VectorXd real_state(2), real_desire_state(2);
     auto state = get_input_port(1).Eval(context);
     auto state_desire = get_input_port(0).Eval(context);
-    real_state << state.segment(7, 1), state.segment(15, 1);
-    real_desire_state << state_desire.segment(7, 1), state_desire.segment(15, 1);
 
+    real_state << state.segment(0, 1), state.segment(2, 1);
+    real_desire_state << state_desire.segment(0, 1), state_desire.segment(2, 1);
     // struct for ocs2 mpc preparation
     mpcTimerPtr_->startTimer();
     auto time = context.get_time();
 
-    ocs2::TargetTrajectories initTargetTrajectory = reconstructTargetTrajectory(time, state_desire);
+    ocs2::TargetTrajectories initTargetTrajectory = reconstructTargetTrajectory(time, real_desire_state);
     mpcPtr_->getSolverPtr()->getReferenceManager().setTargetTrajectories(initTargetTrajectory);
 
     bool controllerIsUpdated = mpcPtr_->run(time, real_state);
@@ -199,39 +221,12 @@ void My_MPC_Controller::CalcU(const drake::systems::Context<double>& context, dr
         std::cerr << "WARNING: The solution time window might be shorter than the MPC delay!\n";
     }
 
-    const std::size_t N = primalSolution.timeTrajectory_.size();
-
-#if 1
-    // time
-    std::cout << "time: " << std::endl;
-    for (auto t : primalSolution.timeTrajectory_) {
-        std::cout << t << std::endl;
-    }
-
-    // state
-    std::cout << "\nmpc solution state" << std::endl;
-    
-    for (std::size_t k = 0; k < N; k++) {
-        for (std::size_t j = 0; j < primalSolution.stateTrajectory_[k].rows(); j++) {
-            std::cout << primalSolution.stateTrajectory_[k](j) << " ";
-        }
-        std::cout << std::endl;
-    }
-
-    // input
-    std::cout << "\nmpc solution input" << std::endl;
-    for(std::size_t k = 0; k < N; k++) {
-        for (std::size_t j = 0; j < primalSolution.inputTrajectory_[k].rows(); j++) {
-            std::cout <<  primalSolution.inputTrajectory_[k](j) << " ";
-        }
-        std::cout << std::endl;
-    }
-    std::cout << "\n\n";
-
-#endif
+    // PrintDebugInfo(primalSolution);
+    // std::cout << primalSolution.inputTrajectory_[0] << std::endl;
 
     output->SetFromVector(primalSolution.inputTrajectory_[0]);
 }
+
 
 std::string GetProgramPath() {
     char buffer[FILENAME_MAX];
@@ -252,13 +247,13 @@ int DoMain(const std::string exec_path) {
     std::string running_path = GetProgramPath();
     const std::string model_name = "/home/wujiayang/learning_drake/my_drake_test/src/mpc_double_integrator/double_integrator.urdf";
     drake::multibody::Parser(plant).AddModelFromFile(model_name);
+    // set fixed base
+    plant->WeldFrames(plant->world_frame(), plant->GetFrameByName("slideBar"));
     plant->Finalize();
     uint32_t nq = plant->num_positions();
     uint32_t nv = plant->num_velocities();
     uint32_t na = plant->num_actuators();
     std::cout << "nq: " << nq << " nv: " << nv << " na: " << na << "\n";
-    // reset gravity vector
-    plant->mutable_gravity_field().set_gravity_vector(Eigen::Vector3d(0, 0, 0));
 
     // get system build done 
     builder.Connect(plant->get_geometry_poses_output_port(), scene_graph->get_source_pose_port(plant->get_source_id().value()));
@@ -278,23 +273,17 @@ int DoMain(const std::string exec_path) {
     drake::systems::Simulator<double> simulator(*diagram);
     auto& plant_context = diagram->GetMutableSubsystemContext(*plant, &simulator.get_mutable_context());
     auto& controller_context = diagram->GetMutableSubsystemContext(*controller, &simulator.get_mutable_context());
-    drake::VectorX<double> q0 = drake::VectorX<double>::Zero(9);
-    drake::VectorX<double> v0 = drake::VectorX<double>::Zero(8);
-    q0 << 1.0, 0.0, 0.0, 0.0, 
-          0.0, 0.0, 0.0,
-          0.0, 0.0;
-    v0 << 0.0, 0.0, 0.0,
-          0.0, 0.0, 0.0, 
-          0.0, 0.0;
+    double desire_position = 2.0;
+    drake::VectorX<double> q0 = drake::VectorX<double>::Zero(2);
+    drake::VectorX<double> v0 = drake::VectorX<double>::Zero(2);
+    double desired_position = 4.0;
+    q0 << 0.0, desired_position;
+    v0 << 0.0, 0.0;
     plant->SetPositions(&plant_context, q0);
     plant->SetVelocities(&plant_context, v0);
     drake::VectorX<double> desire_state = drake::VectorX<double>::Zero(q0.size() + v0.size());
-    desire_state << 1.0, 0.0, 0.0, 0.0,
-                    0.0, 0.0, 0.0,
-                    10.0, 0.0,
-                    0.0, 0.0, 0.0,
-                    0.0, 0.0, 0.0,
-                    0.0, 0.0;
+    desire_state << desired_position, desired_position, // q
+                    0.0, 0.0;  // v
     controller->get_input_port(0).FixValue(&controller_context, desire_state);
 
     // start simulation
