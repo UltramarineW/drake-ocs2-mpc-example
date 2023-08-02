@@ -17,6 +17,7 @@ set(ocs2_include
     ../../lib/ocs2/ocs2_ddp/include
     ../../lib/ocs2/ocs2_qp_solver/include
     ../../lib/ocs2/ocs2_robotic_tools/include
+    ../../lib/ocs2/ocs2_msgs/include
 )
 
 set(SRCS

@@ -35,14 +35,21 @@
 #include <ocs2_core/initialization/Initializer.h>
 #include <ocs2_core/initialization/DefaultInitializer.h>
 #include <ocs2_core/dynamics/LinearSystemDynamics.h>
+#include <ocs2_core/cost/QuadraticStateCost.h>
+#include <ocs2_core/cost/QuadraticStateInputCost.h>
+#include <ocs2_core/misc/Benchmark.h>
 #include <ocs2_ddp/DDP_Settings.h>
+#include <ocs2_ddp/GaussNewtonDDP_MPC.h>
 #include <ocs2_mpc/MPC_Settings.h>
+#include <ocs2_mpc/SystemObservation.h>
+#include <ocs2_mpc/MPC_BASE.h>
 #include <ocs2_oc/synchronized_module/ReferenceManager.h>
 #include <ocs2_oc/rollout/TimeTriggeredRollout.h>
 #include <ocs2_oc/oc_problem/OptimalControlProblem.h>
+#include <ocs2_oc/synchronized_module/ReferenceManagerDecorator.h>
 
-DEFINE_double(dt, 0.001, "system control update time");
-DEFINE_double(ctrl_dt, 0.01, "model predictive controller update time");
+DEFINE_double(dt, 0.01, "system control update time");
+DEFINE_double(simulation_time, 2.0, "simulation time");
 
 class My_MPC_Controller final : public drake::systems::LeafSystem<double> {
     public:
@@ -53,7 +60,11 @@ class My_MPC_Controller final : public drake::systems::LeafSystem<double> {
     void CalcU(const drake::systems::Context<double>& context, drake::systems::BasicVector<double> *output) const;
 
     private:
+
+    ocs2::TargetTrajectories reconstructTargetTrajectory(const double time, Eigen::VectorXd desire_state) const;
+
     std::unique_ptr<drake::systems::Context<double>> plant_context_;
+    std::unique_ptr<drake::systems::Context<double>> contextPtr_;
     Eigen::Matrix<double, -1, 1> initialState_{2};
     Eigen::Matrix<double, -1, 1> finalGoal_{2};
 
@@ -69,6 +80,8 @@ class My_MPC_Controller final : public drake::systems::LeafSystem<double> {
     const std::size_t STATE_DIM = 2;
     const std::size_t INPUT_DIM = 1;
 
+    std::shared_ptr<ocs2::GaussNewtonDDP_MPC> mpcPtr_;
+    std::shared_ptr<ocs2::benchmark::RepeatedTimer> mpcTimerPtr_;
 };
 
 My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> &plant, const std::string& taskFile, const std::string& libraryFolder, bool verbose) {
@@ -111,11 +124,10 @@ My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> &p
     ocs2::loadData::loadEigenMatrix(taskFile, "Q", Q);
     ocs2::loadData::loadEigenMatrix(taskFile, "R", R);
     ocs2::loadData::loadEigenMatrix(taskFile, "Q_final", Qf);
-    std::cerr << "Q:  \n" << Q << "\n";
-    std::cerr << "R:  \n" << R << "\n";
-    std::cerr << "Q_final:\n" << Qf << "\n";
+    problem_.costPtr->add("cost", std::make_unique<ocs2::QuadraticStateInputCost>(Q, R));
+    problem_.finalCostPtr->add("finalCost", std::make_unique<ocs2::QuadraticStateCost>(Qf));
 
-    // Dynamics
+    // Double Integrator System Dynamics
     const ocs2::matrix_t A_ = (ocs2::matrix_t(STATE_DIM, STATE_DIM) << 0.0, 1.0, 0.0, 0.0).finished();
     const ocs2::matrix_t B_ = (ocs2::matrix_t(STATE_DIM, INPUT_DIM) << 0.0, 1.0).finished();
     problem_.dynamicsPtr.reset(new ocs2::LinearSystemDynamics(A_, B_));
@@ -124,6 +136,31 @@ My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> &p
     auto rolloutSettings = ocs2::rollout::loadSettings(taskFile, "rollout", verbose);
     rolloutPtr_.reset(new ocs2::TimeTriggeredRollout(*problem_.dynamicsPtr, rolloutSettings));
     linearSystemInitializerPtr_.reset(new ocs2::DefaultInitializer(INPUT_DIM));
+
+    // mpc
+    mpcPtr_ = std::make_shared<ocs2::GaussNewtonDDP_MPC>(mpcSettings_, ddpSettings_, *rolloutPtr_, problem_, *linearSystemInitializerPtr_);
+    mpcPtr_->getSolverPtr()->setReferenceManager(referenceManagerPtr_);
+    mpcPtr_->reset();
+    ocs2::TargetTrajectories initTargetTrajectory = reconstructTargetTrajectory(0.0, Eigen::VectorXd::Constant(2, 0.0));
+    mpcPtr_->getSolverPtr()->getReferenceManager().setTargetTrajectories(initTargetTrajectory);
+
+    //mpc timer
+    mpcTimerPtr_ = std::make_shared<ocs2::benchmark::RepeatedTimer>();
+    mpcTimerPtr_->reset();
+}
+
+ocs2::TargetTrajectories My_MPC_Controller::reconstructTargetTrajectory(const double time, Eigen::VectorXd desire_state) const{
+    std::size_t N = 1;
+    std::vector<double> desiredTimeTrajectory(N);
+    std::vector<Eigen::Matrix<double, Eigen::Dynamic, 1>> desiredStateTrajectory(N);
+    std::vector<Eigen::Matrix<double, Eigen::Dynamic, 1>> desireInputTrajectory(N);
+    
+    for (std::size_t i = 0; i < N; i++) {
+        desiredTimeTrajectory[i] = time;
+        desiredStateTrajectory[i] = desire_state;
+        desireInputTrajectory[i] = Eigen::VectorXd::Constant(1, 0.0);
+    }
+    return {desiredTimeTrajectory, desiredStateTrajectory, desireInputTrajectory};
 }
 
 void My_MPC_Controller::CalcU(const drake::systems::Context<double>& context, drake::systems::BasicVector<double> *output) const {
@@ -133,15 +170,73 @@ void My_MPC_Controller::CalcU(const drake::systems::Context<double>& context, dr
     real_state << state.segment(7, 1), state.segment(15, 1);
     real_desire_state << state_desire.segment(7, 1), state_desire.segment(15, 1);
 
+    // struct for ocs2 mpc preparation
+    mpcTimerPtr_->startTimer();
+    auto time = context.get_time();
 
-    output->SetFromVector(Eigen::VectorXd::Constant(1, 1.0));
+    ocs2::TargetTrajectories initTargetTrajectory = reconstructTargetTrajectory(time, state_desire);
+    mpcPtr_->getSolverPtr()->getReferenceManager().setTargetTrajectories(initTargetTrajectory);
+
+    bool controllerIsUpdated = mpcPtr_->run(time, real_state);
+    if(!controllerIsUpdated) {
+        return;
+    }
+    double finalTime = time + mpcPtr_->settings().solutionTimeWindow_;
+    if (mpcPtr_->settings().solutionTimeWindow_ < 0) {
+        finalTime = mpcPtr_->getSolverPtr()->getFinalTime();
+    }
+    ocs2::PrimalSolution primalSolution;
+    mpcPtr_->getSolverPtr()->getPrimalSolution(finalTime, &primalSolution);
+
+    mpcTimerPtr_->endTimer();
+
+    // 处理
+    double timeWindow = mpcPtr_->settings().solutionTimeWindow_;
+    if (mpcPtr_->settings().solutionTimeWindow_ < 0) {
+        timeWindow = mpcPtr_->getSolverPtr()->getFinalTime() - time;
+    }
+    if (timeWindow < 2.0 * mpcTimerPtr_->getAverageInMilliseconds() * 1e-3) {
+        std::cerr << "WARNING: The solution time window might be shorter than the MPC delay!\n";
+    }
+
+    const std::size_t N = primalSolution.timeTrajectory_.size();
+
+#if 1
+    // time
+    std::cout << "time: " << std::endl;
+    for (auto t : primalSolution.timeTrajectory_) {
+        std::cout << t << std::endl;
+    }
+
+    // state
+    std::cout << "\nmpc solution state" << std::endl;
+    
+    for (std::size_t k = 0; k < N; k++) {
+        for (std::size_t j = 0; j < primalSolution.stateTrajectory_[k].rows(); j++) {
+            std::cout << primalSolution.stateTrajectory_[k](j) << " ";
+        }
+        std::cout << std::endl;
+    }
+
+    // input
+    std::cout << "\nmpc solution input" << std::endl;
+    for(std::size_t k = 0; k < N; k++) {
+        for (std::size_t j = 0; j < primalSolution.inputTrajectory_[k].rows(); j++) {
+            std::cout <<  primalSolution.inputTrajectory_[k](j) << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << "\n\n";
+
+#endif
+
+    output->SetFromVector(primalSolution.inputTrajectory_[0]);
 }
 
 std::string GetProgramPath() {
     char buffer[FILENAME_MAX];
     if(getcwd(buffer, FILENAME_MAX) != NULL) {
         std::string path = buffer;
-        std::cout << path << std::endl;
         return path;
     }
     exit(-1);
@@ -151,12 +246,17 @@ std::string GetProgramPath() {
 int DoMain(const std::string exec_path) {
     drake::systems::DiagramBuilder<double> builder;
     auto scene_graph = builder.AddSystem<drake::geometry::SceneGraph<double>>();
+    // configure multiplant
     auto plant = builder.AddSystem<drake::multibody::MultibodyPlant>(FLAGS_dt);
     plant->RegisterAsSourceForSceneGraph(scene_graph);
     std::string running_path = GetProgramPath();
     const std::string model_name = "/home/wujiayang/learning_drake/my_drake_test/src/mpc_double_integrator/double_integrator.urdf";
     drake::multibody::Parser(plant).AddModelFromFile(model_name);
     plant->Finalize();
+    uint32_t nq = plant->num_positions();
+    uint32_t nv = plant->num_velocities();
+    uint32_t na = plant->num_actuators();
+    std::cout << "nq: " << nq << " nv: " << nv << " na: " << na << "\n";
     // reset gravity vector
     plant->mutable_gravity_field().set_gravity_vector(Eigen::Vector3d(0, 0, 0));
 
@@ -174,11 +274,6 @@ int DoMain(const std::string exec_path) {
     builder.Connect(controller->get_output_port(0), plant->get_actuation_input_port());
     auto diagram = builder.Build();
 
-    uint32_t nq = plant->num_positions();
-    uint32_t nv = plant->num_velocities();
-    uint32_t na = plant->num_actuators();
-    std::cout << "nq: " << nq << " nv: " << nv << " na: " << na << "\n";
-
     // prepare to start the simulation
     drake::systems::Simulator<double> simulator(*diagram);
     auto& plant_context = diagram->GetMutableSubsystemContext(*plant, &simulator.get_mutable_context());
@@ -191,17 +286,22 @@ int DoMain(const std::string exec_path) {
     v0 << 0.0, 0.0, 0.0,
           0.0, 0.0, 0.0, 
           0.0, 0.0;
-    drake::VectorX<double> initial_state = drake::VectorX<double>::Zero(q0.size() + v0.size());
-    initial_state << q0, v0;
     plant->SetPositions(&plant_context, q0);
     plant->SetVelocities(&plant_context, v0);
-    controller->get_input_port(0).FixValue(&controller_context, initial_state);
+    drake::VectorX<double> desire_state = drake::VectorX<double>::Zero(q0.size() + v0.size());
+    desire_state << 1.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0,
+                    10.0, 0.0,
+                    0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0,
+                    0.0, 0.0;
+    controller->get_input_port(0).FixValue(&controller_context, desire_state);
 
     // start simulation
     simulator.Initialize();
     simulator.set_target_realtime_rate(1.0);
     visualizer.StartRecording();
-    simulator.AdvanceTo(2.0);
+    simulator.AdvanceTo(FLAGS_simulation_time);
     visualizer.StopRecording();
     visualizer.PublishRecording();
     return 0;
