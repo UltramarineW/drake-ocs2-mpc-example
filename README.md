@@ -3,7 +3,7 @@ Using drake for dynamic simulation and multibody kinematic computation and use o
 
 ## Running Example
 
-Need to modify the path exists in `./src/mpc_double_integrator/mpc_double_integrator.cpp`
+If you don't have drake installed, you need to install the drake library first. You can get more information from [drake](https://drake.mit.edu/).
 
 ``` bash
 cd drake-ocs2-mpc-example

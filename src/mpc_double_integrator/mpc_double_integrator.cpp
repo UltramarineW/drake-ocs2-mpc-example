@@ -227,15 +227,16 @@ void My_MPC_Controller::CalcU(const drake::systems::Context<double>& context, dr
     output->SetFromVector(primalSolution.inputTrajectory_[0]);
 }
 
-
-std::string GetProgramPath() {
-    char buffer[FILENAME_MAX];
-    if(getcwd(buffer, FILENAME_MAX) != NULL) {
-        std::string path = buffer;
-        return path;
+std::string GetAbsolutePath(const std::string &path) {
+    std::string abs_path = path;
+    if (path[0] != '/') {
+        std::string current_dir(__FILE__);
+        current_dir.erase(current_dir.rfind('/'));
+        abs_path = current_dir + "/" + path;
     }
-    exit(-1);
+    return abs_path;
 }
+
 
 // drake main process
 int DoMain(const std::string exec_path) {
@@ -244,8 +245,8 @@ int DoMain(const std::string exec_path) {
     // configure multiplant
     auto plant = builder.AddSystem<drake::multibody::MultibodyPlant>(FLAGS_dt);
     plant->RegisterAsSourceForSceneGraph(scene_graph);
-    std::string running_path = GetProgramPath();
-    const std::string model_name = "/home/wujiayang/learning_drake/my_drake_test/src/mpc_double_integrator/double_integrator.urdf";
+    
+    const std::string model_name = GetAbsolutePath("double_integrator.urdf");
     drake::multibody::Parser(plant).AddModelFromFile(model_name);
     // set fixed base
     plant->WeldFrames(plant->world_frame(), plant->GetFrameByName("slideBar"));
@@ -262,8 +263,8 @@ int DoMain(const std::string exec_path) {
     auto& visualizer = drake::geometry::MeshcatVisualizerd::AddToBuilder(&builder, *scene_graph, meshcat);
 
     // controller constructor setting 
-    const std::string taskFile = "/home/wujiayang/learning_drake/my_drake_test/src/mpc_double_integrator/task.info";
-    const std::string LibraryPath = "/home/wujiayang/learning_drake/my_drake_test/src/mpc_double_integrator/auto_generated";
+    const std::string taskFile = GetAbsolutePath("task.info");
+    const std::string LibraryPath = GetAbsolutePath("auto_generated/"); 
     auto controller = builder.AddSystem<My_MPC_Controller>(*plant, taskFile, LibraryPath, false);
     builder.Connect(plant->get_state_output_port(), controller->get_input_port(1));
     builder.Connect(controller->get_output_port(0), plant->get_actuation_input_port());
