@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
 
-list(APPEND CMAKE_PREFIX_PATH "/home/wujiayang/drake")
-
 find_package(drake CONFIG REQUIRED)
 
 find_package(Boost REQUIRED COMPONENTS
