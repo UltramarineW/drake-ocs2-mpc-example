@@ -3,7 +3,7 @@ Using drake for dynamic simulation and multibody kinematic computation and use o
 
 ## Running Example
 
-If you don't have drake installed, you need to install the drake library first. You can get more information from [drake](https://drake.mit.edu/).
+If you don't have drake installed, you need to install the drake library first. You can get more information from [drake](https://drake.mit.edu/). Since ocs2 uses the catkin package, you will also need to install ros noetic to compile the module.
 
 ``` bash
 cd drake-ocs2-mpc-example

@@ -18,12 +18,23 @@ set(ocs2_include
     ../../lib/ocs2/ocs2_msgs/include
 )
 
-set(SRCS
-    ./mpc_double_integrator.cpp
+set(LIBS 
+    ./mpc_controller.cpp
+    ./utils.cpp
 )
 
-include_directories(${Boost_INCLUDE_DIRS} ${ocs2_include})
+add_library(mylib ${LIBS})
 
-add_executable(mpc_double_integrator ${SRCS})
-target_link_libraries(mpc_double_integrator pthread gflags drake::drake ${Boost_LIBRARIES} ocs2_core ocs2_mpc ocs2_oc ocs2_ddp ocs2_qp_solver ocs2_robotic_tools)
+target_include_directories(mylib PUBLIC ${drake_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${ocs2_include} ./)
+
+include_directories(${Boost_INCLUDE_DIRS} ${ocs2_include} ./)
+
+add_executable(mpc_double_integrator ./mpc_double_integrator.cpp)
+
+target_link_libraries(mylib drake::drake ${Boost_LIBRARIES} ocs2_core ocs2_mpc ocs2_oc ocs2_ddp ocs2_qp_solver ocs2_robotic_tools pthread gflags)
+
+target_link_libraries(mpc_double_integrator PRIVATE mylib)
+
+
+
 
