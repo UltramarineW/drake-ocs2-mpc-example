@@ -2,11 +2,12 @@
 
 My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> *plant, const std::string& taskFile, const std::string& libraryFolder, bool verbose) {
     // preparation
+    // plant_.reset(plant);
     plant_ = plant;
-    plant_context_ = plant->CreateDefaultContext();
-    uint32_t nq = plant->num_positions();
-    uint32_t nv = plant->num_velocities();
-    uint32_t na = plant->num_actuated_dofs();
+    plant_context_ = plant_->CreateDefaultContext();
+    uint32_t nq = plant_->num_positions();
+    uint32_t nv = plant_->num_velocities();
+    uint32_t na = plant_->num_actuated_dofs();
     this->DeclareVectorInputPort("desire_state", drake::systems::BasicVector<double>(nq + nv));
     this->DeclareVectorInputPort("state", drake::systems::BasicVector<double>(nq + nv));
     this->DeclareVectorOutputPort("u", drake::systems::BasicVector<double>(na), &My_MPC_Controller::CalcU);
@@ -25,7 +26,7 @@ My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> *p
 
     // Default initial condition and final goal
     ocs2::loadData::loadEigenMatrix(taskFile, "initialState", initialState_);
-    ocs2::loadData::loadEigenMatrix(taskFile, "finalGoal", finalGoal_);
+    // ocs2::loadData::loadEigenMatrix(taskFile, "finalGoal", finalGoal_);
 
     // DDP-MPC settings
     ddpSettings_ = ocs2::ddp::loadSettings(taskFile, "ddp", verbose);
@@ -58,7 +59,7 @@ My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> *p
     mpcPtr_ = std::make_shared<ocs2::GaussNewtonDDP_MPC>(mpcSettings_, ddpSettings_, *rolloutPtr_, problem_, *linearSystemInitializerPtr_);
     mpcPtr_->getSolverPtr()->setReferenceManager(referenceManagerPtr_);
     mpcPtr_->reset();
-    ocs2::TargetTrajectories initTargetTrajectory = reconstructTargetTrajectory(0.0, Eigen::VectorXd::Constant(2, 0.0));
+    ocs2::TargetTrajectories initTargetTrajectory = ReconstructTargetTrajectory(0.0, Eigen::VectorXd::Constant(2, 0.0));
     mpcPtr_->getSolverPtr()->getReferenceManager().setTargetTrajectories(initTargetTrajectory);
 
     //mpc timer
@@ -66,7 +67,7 @@ My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> *p
     mpcTimerPtr_->reset();
 }
 
-ocs2::TargetTrajectories My_MPC_Controller::reconstructTargetTrajectory(const double time, Eigen::VectorXd desire_state) const{
+ocs2::TargetTrajectories My_MPC_Controller::ReconstructTargetTrajectory(const double time, Eigen::VectorXd desire_state) const{
     std::size_t N = 1;
     std::vector<double> desiredTimeTrajectory(N);
     std::vector<Eigen::Matrix<double, Eigen::Dynamic, 1>> desiredStateTrajectory(N);
@@ -101,23 +102,24 @@ void My_MPC_Controller::PrintDebugInfo (const ocs2::PrimalSolution primalSolutio
 
 void My_MPC_Controller::CalcU(const drake::systems::Context<double>& context, drake::systems::BasicVector<double> *output) const {
     Eigen::VectorXd real_state(2), real_desire_state(2);
-    auto state = get_input_port(1).Eval(context);
-    auto state_desire = get_input_port(0).Eval(context);
+    auto& state = get_input_port(1).Eval(context);
+    auto& state_desire = get_input_port(0).Eval(context);
 
 
     real_state << state.segment(0, 1), state.segment(2, 1);
     real_desire_state << state_desire.segment(0, 1), state_desire.segment(2, 1);
 
-    // plant_->SetPositionsAndVelocities(plant_context_, );
-    // const Eigen::Vector3d p_WoP_W(3, 5, 7);
-    // const drake::multibody::SpatialMomentum<double> spatial_momentum = plant_->CalcSpatialMomentumInWorldAboutPoint(plant_context_, p_WoP_W);
+    const Eigen::VectorXd& qv(state);
+    plant_->SetPositionsAndVelocities(plant_context_.get(), qv);
+    Eigen::Vector3d p_WoP_W(3, 5, 7);
+    const drake::multibody::SpatialMomentum<double> spatial_momentum = plant_->CalcSpatialMomentumInWorldAboutPoint(*plant_context_, p_WoP_W);
     // std::cout << "SpacialMomentum" << spatial_momentum << std::endl;
 
     // struct for ocs2 mpc preparation
     mpcTimerPtr_->startTimer();
     auto time = context.get_time();
 
-    ocs2::TargetTrajectories initTargetTrajectory = reconstructTargetTrajectory(time, real_desire_state);
+    ocs2::TargetTrajectories initTargetTrajectory = ReconstructTargetTrajectory(time, real_desire_state);
     mpcPtr_->getSolverPtr()->getReferenceManager().setTargetTrajectories(initTargetTrajectory);
 
     // start mpc computation

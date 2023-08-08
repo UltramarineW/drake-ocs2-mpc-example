@@ -61,11 +61,12 @@ class My_MPC_Controller final : public drake::systems::LeafSystem<double> {
 
     private:
     // member helper function
-    ocs2::TargetTrajectories reconstructTargetTrajectory(const double time, Eigen::VectorXd desire_state) const;
+    ocs2::TargetTrajectories ReconstructTargetTrajectory(const double time, Eigen::VectorXd desire_state) const;
     void PrintDebugInfo (const ocs2::PrimalSolution primalSolution) const;
 
     drake::multibody::MultibodyPlant<double> *plant_;
-    std::unique_ptr<drake::systems::Context<double>> plant_context_;
+    // std::unique_ptr<drake::multibody::MultibodyPlant<double>> plant_;
+    mutable std::unique_ptr<drake::systems::Context<double>> plant_context_;
     std::unique_ptr<drake::systems::Context<double>> contextPtr_;
     Eigen::Matrix<double, -1, 1> initialState_{2};
     Eigen::Matrix<double, -1, 1> finalGoal_{2};

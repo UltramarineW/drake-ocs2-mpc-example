@@ -25,7 +25,7 @@ set(LIBS
 
 add_library(mylib ${LIBS})
 
-target_include_directories(mylib PUBLIC ${drake_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} ${ocs2_include} ./)
+target_include_directories(mylib PUBLIC ${Boost_INCLUDE_DIRS} ${ocs2_include} ./)
 
 include_directories(${Boost_INCLUDE_DIRS} ${ocs2_include} ./)
 

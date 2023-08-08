@@ -1,32 +1,15 @@
 // system
 #include <iostream>
-#include <unistd.h>
-#include <signal.h>
-#include <time.h>
-#include <fstream>
 #include <gflags/gflags.h>
 //drake
 #include "drake/systems/framework/diagram_builder.h"
 #include "drake/systems/analysis/simulator.h"
-#include "drake/systems/primitives/vector_log_sink.h"
-#include "drake/systems/framework/leaf_system.h"
-#include <drake/systems/lcm/lcm_interface_system.h>
-#include "drake/systems/lcm/lcm_publisher_system.h"
-#include "drake/systems/lcm/lcm_subscriber_system.h"
-#include "drake/systems/controllers/linear_quadratic_regulator.h"
-#include "drake/systems/primitives/vector_log_sink.h"
-#include "drake/systems/framework/basic_vector.h"
-#include "drake/multibody/plant/multibody_plant.h"
 #include "drake/multibody/parsing/parser.h"
-#include "drake/multibody/tree/revolute_joint.h"
 #include "drake/geometry/scene_graph.h"
 #include "drake/geometry/meshcat_visualizer.h"
-#include "drake/geometry/meshcat_visualizer_params.h"
 #include "drake/geometry/meshcat.h"
-#include "drake/geometry/drake_visualizer.h"
 #include "drake/lcm/drake_lcm.h"
 #include "drake/common/eigen_types.h"
-#include "drake/common/schema/transform.h"
 
 #include "utils.h"
 #include "mpc_controller.h"
