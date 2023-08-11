@@ -16,4 +16,4 @@ make -j
 
 Use meshcat slide bar to modify desire target position
 
-![meshcat_slider](https://https://ultramarine-image.oss-cn-beijing.aliyuncs.com/img/1691735025799.png)
+![image-20230811143536538](https://ultramarine-image.oss-cn-beijing.aliyuncs.com/img/image-20230811143536538.png)
