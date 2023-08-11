@@ -82,7 +82,7 @@ initialState
 ; state weight matrix
 Q
 {
-  scaling 1e-1
+  scaling 1e+2
   (0,0)  1.0 ; x1
   (1,1)  1.0 ; x2
 }
