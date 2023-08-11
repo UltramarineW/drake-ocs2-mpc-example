@@ -1,4 +1,6 @@
-#pragma once
+#ifndef MPC_CONTROLLER_H_
+#define MPC_CONTROLLER_H_
+
 // system
 #include <iostream>
 #include <unistd.h>
@@ -86,3 +88,6 @@ class My_MPC_Controller final : public drake::systems::LeafSystem<double> {
     std::shared_ptr<ocs2::GaussNewtonDDP_MPC> mpcPtr_;
     std::shared_ptr<ocs2::benchmark::RepeatedTimer> mpcTimerPtr_;
 };
+
+
+#endif // MPC_CONTROLLER_H_

@@ -1,4 +1,6 @@
 #include "mpc_controller.h"
+#include <memory>
+#include "ocs2_oc/synchronized_module/ReferenceManager.h"
 
 My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> *plant, const std::string& taskFile, const std::string& libraryFolder, bool verbose) {
     // preparation
@@ -33,7 +35,7 @@ My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> *p
     mpcSettings_ = ocs2::mpc::loadSettings(taskFile, "mpc", verbose);
 
     // reference interface
-    referenceManagerPtr_.reset(new ocs2::ReferenceManager);
+    referenceManagerPtr_ = std::make_shared<ocs2::ReferenceManager>();
 
     // Optimal Control Problem
     ocs2::matrix_t Q(STATE_DIM, STATE_DIM);
@@ -84,7 +86,6 @@ ocs2::TargetTrajectories My_MPC_Controller::ReconstructTargetTrajectory(const do
 void My_MPC_Controller::PrintDebugInfo (const ocs2::PrimalSolution primalSolution) const{
     const std::size_t N = primalSolution.timeTrajectory_.size();
 
-
     std::cout << "mpc solution" << std::endl;
     for (std::size_t k = 0; k < N; k++) {
         std::cout << "time: " << primalSolution.timeTrajectory_[k] << "  state: ";
@@ -101,13 +102,8 @@ void My_MPC_Controller::PrintDebugInfo (const ocs2::PrimalSolution primalSolutio
 }
 
 void My_MPC_Controller::CalcU(const drake::systems::Context<double>& context, drake::systems::BasicVector<double> *output) const {
-    Eigen::VectorXd real_state(2), real_desire_state(2);
     auto& state = get_input_port(1).Eval(context);
     auto& state_desire = get_input_port(0).Eval(context);
-
-
-    real_state << state.segment(0, 1), state.segment(2, 1);
-    real_desire_state << state_desire.segment(0, 1), state_desire.segment(2, 1);
 
     const Eigen::VectorXd& qv(state);
     plant_->SetPositionsAndVelocities(plant_context_.get(), qv);
@@ -119,11 +115,11 @@ void My_MPC_Controller::CalcU(const drake::systems::Context<double>& context, dr
     mpcTimerPtr_->startTimer();
     auto time = context.get_time();
 
-    ocs2::TargetTrajectories initTargetTrajectory = ReconstructTargetTrajectory(time, real_desire_state);
-    mpcPtr_->getSolverPtr()->getReferenceManager().setTargetTrajectories(initTargetTrajectory);
+    ocs2::TargetTrajectories target_trajectory = ReconstructTargetTrajectory(time, state_desire);
+    mpcPtr_->getSolverPtr()->getReferenceManager().setTargetTrajectories(target_trajectory);
 
     // start mpc computation
-    bool controllerIsUpdated = mpcPtr_->run(time, real_state);
+    bool controllerIsUpdated = mpcPtr_->run(time, state);
     if(!controllerIsUpdated) {
         return;
     }

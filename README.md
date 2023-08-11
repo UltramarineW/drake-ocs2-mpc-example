@@ -13,3 +13,7 @@ cmake ..
 make -j
 ./src/mpc_double_integrator/mpc_double_integrator
 ```
+
+Use meshcat slide bar to modify desire target position
+
+![meshcat_slider](https://https://ultramarine-image.oss-cn-beijing.aliyuncs.com/img/1691735025799.png)
