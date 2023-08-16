@@ -1,5 +1,5 @@
-#ifndef MPC_CONTROLLER_H_
-#define MPC_CONTROLLER_H_
+#ifndef DOUBLE_INTEGRATOR_MPC_CONTROLLER_H_
+#define DOUBLE_INTEGRATOR_MPC_CONTROLLER_H_
 
 // system
 #include <iostream>

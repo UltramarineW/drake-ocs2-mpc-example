@@ -12,8 +12,8 @@
 #include "drake/common/eigen_types.h"
 
 #include "utils.h"
-#include "double_integrator_mpc_controller.h"
-#include "double_integrator_user_command.h"
+#include "cartpole_mpc_controller.h"
+#include "cartpole_user_command.h"
 
 DEFINE_double(dt, 0.01, "system control update time");
 DEFINE_double(simulation_time, 1000.0, "simulation time");
@@ -26,7 +26,7 @@ int DoMain(const std::string exec_path) {
     auto plant = builder.AddSystem<drake::multibody::MultibodyPlant>(FLAGS_dt);
     plant->RegisterAsSourceForSceneGraph(scene_graph);
     
-    const std::string model_name = GetAbsolutePath("mpc_double_integrator/urdf/double_integrator.urdf");
+    const std::string model_name = GetAbsolutePath("mpc_cartpole/urdf/cartpole.urdf");
     const auto double_integrator_instance = drake::multibody::Parser(plant).AddModelFromFile(model_name);
     
     // set fixed base
@@ -35,7 +35,7 @@ int DoMain(const std::string exec_path) {
     uint32_t nq = plant->num_positions();
     uint32_t nv = plant->num_velocities();
     uint32_t na = plant->num_actuators();
-    std::cout << "nq: " << nq << " nv: " << nv << " na: " << na << "\n";
+    std::cerr << "nq: " << nq << " nv: " << nv << " na: " << na << "\n";
 
     // geometry settings 
     builder.Connect(plant->get_geometry_poses_output_port(), scene_graph->get_source_pose_port(plant->get_source_id().value()));
@@ -45,8 +45,8 @@ int DoMain(const std::string exec_path) {
     meshcat->AddSlider("Desire Target", 0, 10, 0.5, 0);
 
     // controller constructor setting 
-    const std::string taskFile = GetAbsolutePath("mpc_double_integrator/config/task.info");
-    const std::string LibraryPath = GetAbsolutePath("mpc_double_integrator/config/auto_generated/"); 
+    const std::string taskFile = GetAbsolutePath("mpc_cartpole/config/task.info");
+    const std::string LibraryPath = GetAbsolutePath("mpc_cartpole/config/auto_generated/"); 
     auto controller = builder.AddSystem<My_MPC_Controller>(plant, taskFile, LibraryPath, false);
     auto user_command_system = builder.AddSystem<UserCommand>(plant, meshcat);
     builder.Connect(plant->get_state_output_port(), controller->get_input_port(1));
@@ -59,12 +59,13 @@ int DoMain(const std::string exec_path) {
     auto& plant_context = diagram->GetMutableSubsystemContext(*plant, &simulator.get_mutable_context());
     auto& controller_context = diagram->GetMutableSubsystemContext(*controller, &simulator.get_mutable_context());
 
-    drake::VectorX<double> q0 = drake::VectorX<double>::Zero(1);
-    drake::VectorX<double> v0 = drake::VectorX<double>::Zero(1);
-    q0 << 0.0;
-    v0 << 0.0;
+    drake::VectorX<double> q0 = drake::VectorX<double>::Zero(nq);
+    drake::VectorX<double> v0 = drake::VectorX<double>::Zero(nv);
+    q0 << 0.0, M_PI;
+    v0 << 0.0, 0.0;
     plant->SetPositions(&plant_context, q0);
     plant->SetVelocities(&plant_context, v0);
+    std::cout << "Robot Initialize successfully!" << std::endl;
 
     // start simulation
     simulator.Initialize();

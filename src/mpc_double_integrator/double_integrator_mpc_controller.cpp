@@ -1,4 +1,4 @@
-#include "mpc_controller.h"
+#include "double_integrator_mpc_controller.h"
 #include <memory>
 #include "ocs2_oc/synchronized_module/ReferenceManager.h"
 

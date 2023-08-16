@@ -1,4 +1,4 @@
-#include "user_command.h"
+#include "double_integrator_user_command.h"
 #include <drake/systems/framework/basic_vector.h>
 
 UserCommand::UserCommand(drake::multibody::MultibodyPlant<double> *plant, const std::shared_ptr<drake::geometry::Meshcat> meshcat) : meshcat_(meshcat)
