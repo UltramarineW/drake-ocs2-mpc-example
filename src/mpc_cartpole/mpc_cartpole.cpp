@@ -65,7 +65,6 @@ int DoMain(const std::string exec_path) {
     v0 << 0.0, 0.0;
     plant->SetPositions(&plant_context, q0);
     plant->SetVelocities(&plant_context, v0);
-    std::cout << "Robot Initialize successfully!" << std::endl;
 
     // start simulation
     simulator.Initialize();

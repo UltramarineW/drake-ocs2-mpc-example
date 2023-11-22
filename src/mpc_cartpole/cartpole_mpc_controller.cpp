@@ -58,12 +58,10 @@ My_MPC_Controller::My_MPC_Controller(drake::multibody::MultibodyPlant<double> *p
     problem_.costPtr->add("cost", std::make_unique<ocs2::QuadraticStateInputCost>(Q, R));
     problem_.finalCostPtr->add("finalCost", std::make_unique<ocs2::QuadraticStateCost>(Qf));
 
-    std::cerr << "Start loading dynamics" << std::endl;
     // Cartpole System Dynamics
     CartPoleParameters cartPoleParameters;
     cartPoleParameters.loadSettings(taskFile, "cartpole_parameters", verbose);
     problem_.dynamicsPtr.reset(new CartPoleSystemDynamics(cartPoleParameters, libraryFolder, STATE_DIM, INPUT_DIM, verbose));
-    std::cerr << "End loading dynamics" << std::endl;
     // Constraints
     auto getPenalty = [&]() {
         using penalty_type = ocs2::augmented::SlacknessSquaredHingePenalty;

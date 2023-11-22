@@ -4,7 +4,7 @@ cartpole_parameters
   cartMass     2.0
   poleMass     0.2
   poleLength   1.0
-  maxInput     5.0
+  maxInput     1000.0
   gravity      9.81
 }
 
@@ -13,7 +13,7 @@ ddp
 {
   algorithm                      SLQ
 
-  nThreads                       1
+  nThreads                       3
 
   maxNumIterations               1
   minRelCost                     0.1
@@ -60,7 +60,7 @@ rollout
 ; MPC settings
 mpc
 {
-  timeHorizon                 5.0   ; [s]
+  timeHorizon                 1   ; [s]
   solutionTimeWindow          -1    ; maximum [s]
   coldStart                   false
 
